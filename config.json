@@ -1,6 +1,6 @@
 {
   "development": {
-    "localBaseUrl": "https://bd79604b.ngrok.io",
+    "localBaseUrl": "http://948927e6.ngrok.io",
 
     // HipChat add-ons don't use asymmetric key algos
     "usePublicKey": false,

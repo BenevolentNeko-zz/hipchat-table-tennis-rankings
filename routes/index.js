@@ -144,26 +144,111 @@ module.exports = function (app, addon) {
 
   // This is an example route to handle an incoming webhook
   // https://developer.atlassian.com/hipchat/guide/webhooks
+
+  var players = [];
+
+  function rankDown(playerID){
+    var currentPosition = players.indexOf(playerID);
+    var newPosition = currentPosition + 1;
+    if (newPosition < players.length){
+      players[currentPosition] = players[newPosition];
+      players[newPosition] = playerID;
+    }
+  }
+  function rankUp(playerID){
+    var currentPosition = players.indexOf(playerID);
+    var newPosition = currentPosition - 1;
+    if (newPosition >= 0){
+      players[currentPosition] = players[newPosition];
+      players[newPosition] = playerID;
+    }
+  }
+  function addNewPlayerAtPosition(playerID, position){
+    players.splice(position, 0, playerID);
+  }
+
+  function updateRankings(winner, loser){
+    var winnerRanking = players.indexOf(winner);
+    var loserRanking = players.indexOf(loser);
+
+    if (winnerRanking === -1 && loserRanking === -1){
+      // Neither player on board. Add winner and loser.
+      players.push(winner);
+      players.push(loser);
+    } else if (winnerRanking >= 0 && loserRanking >= 0){
+      // Both players on the board
+      if (winnerRanking > loserRanking){
+         rankUp(winner);
+         rankDown(loser);
+      }
+    } else if (winnerRanking >=0 && loserRanking === -1) {
+      players.push(loser);
+    } else if (winnerRanking === -1 && loserRanking >= 0){
+      addNewPlayerAtPosition(winner, loserRanking);
+    }
+  }
+
+  function buildTTMessage(mentions, requestMessage){
+    if (mentions instanceof Array){
+      if (mentions.length === 2){
+        var winner = mentions[0];
+        var loser = mentions[1];
+        if (requestMessage.indexOf(mentions[0].mention_name) > requestMessage.indexOf(mentions[1].mention_name)){
+          winner = mentions[1];
+          loser = mentions[0];
+        }
+
+        var winningMessage = "Well done " + winner.name + "!";
+        var losingMessage = "Better luck next time " + loser.name + "!";
+
+        updateRankings(winner.name, loser.name);
+
+        return winningMessage + "</br >" + losingMessage;
+      }
+      throw "The 2 players should be tagged with their @MentionName."
+    }
+    throw "Something is wrong with the formatting there.";
+  }
+
+
   app.post('/webhook',
     addon.authenticate(),
     function (req, res) {
-      // /TT sdf beats wer 6-5
-      // TT: Well done sdf!
-      // TT: Better luck next time wer
-
-      // https.put('')
-
-      // s3 -
-      // 1. sdf
-      // 2. sdfsd
-      // 3. Name1
-      // 4. Name2
-      // 5. Name3
+      var message;
+      var messageColor = "green";
+      var options = {
+        options: {
+          color: messageColor
+        }
+      };
+      var requestMessage = req.body.item.message.message;
+      var mentions = req.body.item.message.mentions;
+      var commands = requestMessage.split(" ");
 
 
-      hipchat.sendMessage(req.clientInfo, req.identity.roomId, 'pong')
+      try {
+        if (commands.length === 2 && commands[1].toLowerCase() === "rankings"){
+          message = "<b>Player rankings currently stand at:</b><ol>"
+          for (var i = 0; i < players.length; i++){
+            message += "<li>" + players[i] + "</li>";
+          }
+          message += "</ol>";
+          messageColor = "orange";
+          console.log(message);
+        } else {
+          message = buildTTMessage(mentions, requestMessage);
+        }
+        console.log(players);
+      } catch (errorMessage) {
+        message = errorMessage + " Try: <br />/TT @Winner beats @Loser";
+        messageColor = "red";
+      }
+
+      hipchat.sendMessage(req.clientInfo, req.identity.roomId, message, {options: {color: messageColor}})
         .then(function (data) {
           res.sendStatus(200);
+        }).catch(function(err){
+          console.log(err);
         });
     }
     );
@@ -175,7 +260,7 @@ module.exports = function (app, addon) {
     var installedMessage = 'The ' + addon.descriptor.name + ' add-on has been installed in this room';
     var options = {
       options: {
-        color: "red"
+        color: "yellow"
       }
     }
     hipchat.sendMessage(clientInfo, req.body.roomId, installedMessage, options);
