@@ -2,11 +2,14 @@ var http = require('request');
 var cors = require('cors');
 var uuid = require('uuid');
 var url = require('url');
+var jsonfile = require('jsonfile');
 
 // This is the heart of your HipChat Connect add-on. For more information,
 // take a look at https://developer.atlassian.com/hipchat/tutorials/getting-started-with-atlassian-connect-express-node-js
 module.exports = function (app, addon) {
   var hipchat = require('../lib/hipchat')(addon);
+
+  var fileLocation = "data/rankings.json";
 
   // simple healthcheck
   app.get('/healthcheck', function (req, res) {
@@ -186,6 +189,11 @@ module.exports = function (app, addon) {
     } else if (winnerRanking === -1 && loserRanking >= 0){
       addNewPlayerAtPosition(winner, loserRanking);
     }
+    return {
+      winner: players.indexOf(winner) +1,
+      loser: players.indexOf(loser) +1,
+      length: players.length
+    };
   }
 
   function buildTTMessage(mentions, requestMessage){
@@ -198,10 +206,19 @@ module.exports = function (app, addon) {
           loser = mentions[0];
         }
 
-        var winningMessage = "Well done " + winner.name + "!";
-        var losingMessage = "Better luck next time " + loser.name + "!";
 
-        updateRankings(winner.name, loser.name);
+        var result = updateRankings(winner.name, loser.name);
+
+        var winningMessage = "<b>Well done " + winner.name + "!</b> <br />&nbsp;&nbsp;&nbsp;&nbsp;<em>Ranked "+ getOrdinal(result.winner) + " out of " + result.length + "</em>";
+        var losingMessage = "<b>Better luck next time " + loser.name + "!</b> <br />&nbsp;&nbsp;&nbsp;&nbsp;<em>Ranked "+ getOrdinal(result.loser) + " out of " + result.length + "</em>";
+
+
+        jsonfile.writeFile(fileLocation, players, function(err) {
+          if (err){
+            console.log(err);
+            throw (err);
+          }
+        });
 
         return winningMessage + "</br >" + losingMessage;
       }
@@ -210,20 +227,23 @@ module.exports = function (app, addon) {
     throw "Something is wrong with the formatting there.";
   }
 
+  function getOrdinal(n) {
+   var s=["th","st","nd","rd"],
+       v=n%100;
+   return n+(s[(v-20)%10]||s[v]||s[0]);
+ }
 
   app.post('/webhook',
     addon.authenticate(),
     function (req, res) {
       var message;
       var messageColor = "green";
-      var options = {
-        options: {
-          color: messageColor
-        }
-      };
       var requestMessage = req.body.item.message.message;
       var mentions = req.body.item.message.mentions;
       var commands = requestMessage.split(" ");
+      // Load the rankings
+      players = jsonfile.readFileSync(fileLocation);
+      console.log(players);
 
 
       try {
@@ -233,7 +253,7 @@ module.exports = function (app, addon) {
             message += "<li>" + players[i] + "</li>";
           }
           message += "</ol>";
-          messageColor = "orange";
+          messageColor = "green";
           console.log(message);
         } else {
           message = buildTTMessage(mentions, requestMessage);
